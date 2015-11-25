@@ -1,0 +1,247 @@
+#!/bin/bash
+# Painless git flow hotfixes
+
+main() {
+    if [ "$1" == "-Xed" ]
+    then
+        if grep -q "^# Write a message for tag" $3
+        then
+            sed -e "1s/.*/$2/" -i "" "$3"
+        fi
+        # cat "$3"
+        exit
+    elif [ "$1" == "-h" -o "$1" == "--help" ]
+    then
+        echo "Usage: git lava [<commit message>]"
+        echo
+        echo "See https://github.com/WebEngage/git-lava for more details"
+        exit
+    elif [ "$1" != "" ]
+    then
+        COMMIT_MESSAGE=$1
+        hotflow
+    else
+        COMMIT_MESSAGE=""
+        hotflow
+    fi
+}
+
+hotflow() {
+
+    if ! git status > /dev/null 2>&1
+    then 
+        echo "Something wrong with git"
+        exit 1
+    fi
+
+    HOTFIX_PREFIX=$(git config --get gitflow.prefix.hotfix)
+    RELEASE_PREFIX=$(git config --get gitflow.prefix.release)
+
+    MASTER_BRANCH=$(git config --get gitflow.branch.master)
+    DEVELOP_BRANCH=$(git config --get gitflow.branch.develop)
+
+    if [ "$HOTFIX_PREFIX" == "" -o "$RELEASE_PREFIX" == "" -o "$MASTER_BRANCH" == "" -o "$DEVELOP_BRANCH" == "" ]
+    then
+        echo "Run 'git flow init' first"
+        exit 1
+    fi
+
+    HOTFIX_PREFIX=${HOTFIX_PREFIX/\//}
+    RELEASE_PREFIX=${RELEASE_PREFIX/\//}
+
+    PREFIX=$(git config --get gitlava.tagprefix)
+
+    if [ "$PREFIX" == "" ]
+    then
+        echo "Tag prefix is not set!"
+        echo "Run"
+        echo "    git config gitlava.tagprefix <prefix>"
+        echo
+        echo "For prefix 'shifu' and hotfix version 3.1.4"
+        echo "  - change commit is tagged as 'shifu-3.1.4'"
+        echo "  - hotfix branch is created as '$HOTFIX_PREFIX/shifu-3.1.4'"
+        echo
+        echo "If you don't want a prefix set it as '-'"
+        exit 1
+    elif [ "$PREFIX" == "-" ]
+    then
+        PREFIX=""
+    else
+        PREFIX="$PREFIX-"
+    fi
+
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+    if [ $CURRENT_BRANCH != "$MASTER_BRANCH" ]
+    then
+        echo "Not on master branch '$MASTER_BRANCH'"
+        exit 1
+    fi
+
+    if git diff --no-ext-diff --quiet --exit-code
+    then
+        echo "No changes"
+        exit 1
+    fi
+
+    pretty "git stash" "stashing staged changes and modifications"
+    git stash
+
+    pretty "git pull" "in master branch"
+    git pull
+
+    pretty "git checkout $DEVELOP_BRANCH"
+    git checkout "$DEVELOP_BRANCH"
+
+    pretty "git pull" "in develop branch"
+    git pull
+
+    LAST_VERSION=$(git log --merges --grep="Merge branch '$HOTFIX_PREFIX/$PREFIX[0-9]*\.[0-9]*\.[0-9]*' into $DEVELOP_BRANCH" --format="%s" -n 1 | sed "s/Merge branch '$HOTFIX_PREFIX\/$PREFIX\([0-9]*\.[0-9]*\.[0-9]*\)' into $DEVELOP_BRANCH/\1/")
+
+    CURRENT_RELEASE_VERSION=$(git log --merges --grep="Merge branch '$RELEASE_PREFIX/$PREFIX[0-9]*\.[0-9]*\(\.0\)\?'" --format="%s" -n 1 | sed "s/Merge branch '$RELEASE_PREFIX\/$PREFIX\([0-9]*\.[0-9]*\)\(\.0\)\{0,1\}.*'/\1/")
+
+    MAJOR_VERSION=$(echo $LAST_VERSION | sed "s/\([0-9]*\.[0-9]*\)\.[0-9]*/\1/")
+    MINOR_VERSION=$(echo $LAST_VERSION | sed "s/[0-9]*\.[0-9]*\.\([0-9]*\)/\1/")
+
+    if [ $(bc <<< "$MAJOR_VERSION > $CURRENT_RELEASE_VERSION") -eq 1 ]
+    then
+        err "Latest hotfix ($LAST_VERSION) has a major version greater than current release version ($CURRENT_RELEASE_VERSION)"
+        err "Rickrolling back"
+
+        # rollback
+
+        pretty "git checkout $MASTER_BRANCH"
+        git checkout "$MASTER_BRANCH"
+
+        pretty "git stash pop" "unstashing"
+        git stash pop
+
+        exit 1
+    elif [ "$MAJOR_VERSION" != "$CURRENT_RELEASE_VERSION" ]
+    then
+        MAJOR_VERSION="$CURRENT_RELEASE_VERSION"
+        MINOR_VERSION=0
+    fi
+
+    let NEXT_MINOR_VERSION=$MINOR_VERSION+1
+
+    NEXT_VERSION="$MAJOR_VERSION".$NEXT_MINOR_VERSION
+
+    while git rev-parse "$PREFIX$NEXT_VERSION" > /dev/null 2>&1
+    do
+        let NEXT_MINOR_VERSION=$NEXT_MINOR_VERSION+1
+        NEXT_VERSION="$MAJOR_VERSION".$NEXT_MINOR_VERSION
+    done
+
+    TAG_NAME="$PREFIX$NEXT_VERSION"
+    BRANCH_NAME="$HOTFIX_PREFIX/$TAG_NAME"
+
+
+    pretty "git flow hotfix start $TAG_NAME"
+    git flow hotfix start $TAG_NAME
+
+    pretty "git stash apply"
+    git stash apply
+
+    pretty "git --no-pager diff" "showing all modifications"
+    git --no-pager diff
+
+    if [ "$COMMIT_MESSAGE" == "" ]
+    then
+        pretty "git commit -a"
+        git commit -a
+    else
+        pretty "git commit -am \"$COMMIT_MESSAGE\""
+        git commit -am "$COMMIT_MESSAGE"
+    fi
+
+    # get the location of this script
+    SCRIPT_DIRECTORY=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")
+
+    # BIG hack - sets itself as editor for merge commit and tag messages
+    # so that 'git flow hotfix finish' goes on non-interactively
+    export GIT_EDITOR="$SCRIPT_DIRECTORY/$SCRIPT_NAME -Xed $TAG_NAME"
+
+
+    pretty "git flow hotfix finish $TAG_NAME"
+    git flow hotfix finish $TAG_NAME
+
+    if [ $? -ne 0 ]
+    then
+        rollback "$BRANCH_NAME" "$TAG_NAME"
+    fi
+
+    pretty "git push" "push develop branch to origin"
+    git push
+    if [ $? -ne 0 ]
+    then
+        rollback "$BRANCH_NAME" "$TAG_NAME"
+    fi
+
+    pretty "git checkout $MASTER_BRANCH"
+    git checkout "$MASTER_BRANCH"
+
+    pretty "git push --follow-tags" "push master branch along with tags to origin"
+    git push --follow-tags
+
+    if [ $? -ne 0 ]
+    then
+        err "Couldn't push to origin/$MASTER_BRANCH... also cannot rollback ☹"
+        echo "Changes are preserved in 'stash@{0}'"
+        exit
+    fi
+
+    pretty "git stash drop"
+    git stash drop
+
+    yo "Created hotfix ($TAG_NAME)"
+    # rollback "$BRANCH_NAME" "$TAG_NAME"
+}
+
+rollback() {
+    err "Rolling back ☹"
+
+    pretty "git checkout $DEVELOP_BRANCH"
+    git checkout "$DEVELOP_BRANCH"
+
+    pretty "git reset --hard origin/$DEVELOP_BRANCH"
+    git reset --hard "origin/$DEVELOP_BRANCH"
+
+    pretty "git checkout $MASTER_BRANCH"
+    git checkout "$MASTER_BRANCH"
+
+    pretty "git reset --hard origin/$MASTER_BRANCH"
+    git reset --hard "origin/$MASTER_BRANCH"
+
+    pretty "git stash pop"
+    git stash pop
+
+    pretty "git branch -d $1"
+    git branch -d "$1"
+
+    pretty "git tag -d $2"
+    git tag -d "$2"
+
+    err "Couldn't create hotfix ($2)"
+    exit 1
+}
+
+pretty() {
+    if [ "$2" == "" ]
+    then
+        printf "\n\e[1m\e[103m\e[31m→ \e[39m$1\e[0m\n"
+    else
+        printf "\n\e[1m\e[103m\e[31m→ \e[39m$1 \e[2m\e[21m# $2\e[0m\n"
+    fi
+}
+
+err() {
+    printf "\n\e[1m\e[31m✗✗✗ \e[0m$1\n"
+}
+
+yo() {
+    printf "\n\e[1m\e[32m✓✓✓ \e[0m$1\n"
+}
+
+main "$1" "$2" "$3"
