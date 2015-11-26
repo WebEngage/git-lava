@@ -1,6 +1,6 @@
 # git-lava
 
-If your project enforces [git-flow](https://github.com/nvie/gitflow) as the branching model and right now you are frustated out of your mind having to manually create hotfixes every now and then - git-lava is for you.
+If your project enforces [git-flow](https://github.com/nvie/gitflow) as the branching model and you are frustated out of your mind having to manually create hotfixes every now and then - git-lava is for you.
 
 git-lava will create a hotfix painlessly without any user interaction and have it pushed to origin.
 
@@ -16,13 +16,18 @@ Say for prefix 'shifu' and hotfix version 3.1.4
   - hotfix branch is created as 'hotfix/shifu-3.1.4'
 
 If your project doesn't have such prefixes, set it as `-` (a hyphen)
+
 ### Usage
 ```git lava [<commit message>]```
 
 If commit message is omitted at the command line, user is prompted for the message later in `$GIT_EDITOR`
 
-### Important
-git-lava is only suitable for projects that follow the semantic versioning scheme.
+### Important assumptions
+  - git-lava is only suitable for projects that follow the [semantic versioning](http://semver.org/) scheme.
+  - git-lava searches `git log` for commit messages like `Merge branch 'hotfix/shifu-7.2.1' into develop` to compute the next hotfix version, so its required that you keep the merge commit messages in the same (default) format.
+  - Release names should also incorporate the tag prefix 
+    * if you have set 'shifu' as the tag prefix, release branches are to be named like 'release/shifu-7.1'
+    * and if its set as `-` (omit), release branches must be like 'release/7.1'
 
 ### License - [WTFPL](http://www.wtfpl.net/)
 ```
