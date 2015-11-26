@@ -53,9 +53,9 @@ hotflow() {
 
     if [ "$PREFIX" == "" ]
     then
-        echo "Tag prefix is not set!"
+        err "Tag prefix is not set!"
         echo "Run"
-        echo "    git config gitlava.tagprefix <prefix>"
+        pretty "git config gitlava.tagprefix <prefix>"
         echo
         echo "For prefix 'shifu' and hotfix version 3.1.4"
         echo "  - change commit is tagged as 'shifu-3.1.4'"
@@ -100,11 +100,30 @@ hotflow() {
 
     CURRENT_RELEASE_VERSION=$(git log --merges --grep="Merge branch '$RELEASE_PREFIX/$PREFIX[0-9]*\.[0-9]*\(\.0\)\?'" --format="%s" -n 1 | sed "s/Merge branch '$RELEASE_PREFIX\/$PREFIX\([0-9]*\.[0-9]*\)\(\.0\)\{0,1\}.*'/\1/")
 
+    if [ "$CURRENT_RELEASE_VERSION" == "" ]
+    then
+        # rollback; can't proceed
+
+        pretty "git checkout $MASTER_BRANCH"
+        git checkout "$MASTER_BRANCH"
+
+        pretty "git stash pop" "unstashing"
+        git stash pop
+
+        echo
+        err "A current release version was not detected!"
+        echo "git-lava searches the log for commit messages like \"Merge branch '$RELEASE_PREFIX/${PREFIX}x.y'\""
+        echo
+        echo "If no release has ever been created in the project, create one before running 'git lava'"
+        exit 1
+    fi
+
     MAJOR_VERSION=$(echo $LAST_VERSION | sed "s/\([0-9]*\.[0-9]*\)\.[0-9]*/\1/")
     MINOR_VERSION=$(echo $LAST_VERSION | sed "s/[0-9]*\.[0-9]*\.\([0-9]*\)/\1/")
 
-    if [ $(bc <<< "$MAJOR_VERSION > $CURRENT_RELEASE_VERSION") -eq 1 ]
+    if [ "$LAST_VERSION" != "" -a $(bc <<< "$MAJOR_VERSION > $CURRENT_RELEASE_VERSION") -eq 1 ]
     then
+        echo
         err "Latest hotfix ($LAST_VERSION) has a major version greater than current release version ($CURRENT_RELEASE_VERSION)"
         err "Rickrolling back"
 
@@ -187,6 +206,7 @@ hotflow() {
 
     if [ $? -ne 0 ]
     then
+        echo
         err "Couldn't push to origin/$MASTER_BRANCH... also cannot rollback ☹"
         echo "Changes are preserved in 'stash@{0}'"
         exit
@@ -200,6 +220,7 @@ hotflow() {
 }
 
 rollback() {
+    echo
     err "Rolling back ☹"
 
     pretty "git checkout $DEVELOP_BRANCH"
@@ -223,6 +244,7 @@ rollback() {
     pretty "git tag -d $2"
     git tag -d "$2"
 
+    echo
     err "Couldn't create hotfix ($2)"
     exit 1
 }
@@ -237,7 +259,7 @@ pretty() {
 }
 
 err() {
-    printf "\n\e[1m\e[31m✗✗✗ \e[0m$1\n"
+    printf "\e[1m\e[31m✗✗✗ \e[0m$1\n"
 }
 
 yo() {
