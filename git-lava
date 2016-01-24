@@ -161,6 +161,14 @@ hotflow() {
 
     pretty "git stash apply"
     git stash apply
+    
+    if [ $? -ne 0 ]
+    then
+        pretty "git reset --hard" "cleaning up index and working tree changes"
+        git reset --hard
+
+        rollback "$BRANCH_NAME" "$TAG_NAME"
+    fi
 
     pretty "git --no-pager diff" "showing all modifications"
     git --no-pager diff
@@ -235,15 +243,15 @@ rollback() {
     pretty "git reset --hard origin/$MASTER_BRANCH"
     git reset --hard "origin/$MASTER_BRANCH"
 
-    pretty "git stash pop"
-    git stash pop
-
     pretty "git branch -d $1"
     git branch -d "$1"
 
     pretty "git tag -d $2"
     git tag -d "$2"
 
+    pretty "git stash pop"
+    git stash pop
+    
     echo
     err "Couldn't create hotfix ($2)"
     exit 1
