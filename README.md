@@ -35,17 +35,19 @@ If you intend to use `git lava`, first check whether your project meets all thes
 
 
 ### Installation
+`git lava` only works on *nixes (including Mac OS X)
+
 1. You'll need to have [git-flow](https://github.com/nvie/gitflow) installed first
 
 2. Navigate to a directory in `$PATH` where you have write access and execute
-```
-curl https://raw.githubusercontent.com/WebEngage/git-lava/master/git-lava > git-lava
-```
+    ```
+    curl https://raw.githubusercontent.com/WebEngage/git-lava/master/git-lava > git-lava
+    ```
 
 3. In a git repository, set the 'tag prefix' as decided for that project. If the project doesn't have such a prefix, set it as `-` (a hyphen)
-```
-git config gitlava.tagprefix <prefix>
-```
+    ```
+    git config gitlava.tagprefix <prefix>
+    ```
 
 
 ### Usage
