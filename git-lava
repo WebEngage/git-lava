@@ -34,6 +34,15 @@ hotflow() {
         exit 1
     fi
 
+    GIT_ROOT=$(git rev-parse --show-toplevel)
+    cd "$GIT_ROOT"
+
+    if ! which git-flow > /dev/null 2>&1
+    then
+        echo "git-flow is not installed. Refer https://github.com/nvie/gitflow/wiki/Installation"
+        exit 1
+    fi
+
     HOTFIX_PREFIX=$(git config --get gitflow.prefix.hotfix)
     RELEASE_PREFIX=$(git config --get gitflow.prefix.release)
 
@@ -78,14 +87,36 @@ hotflow() {
         exit 1
     fi
 
-    if git diff --no-ext-diff --quiet --exit-code
+    # add unstaged changes except submodules"
+    git diff --name-only | while read CHANGE
+    do
+        if ! git config --file=.gitmodules "submodule.$CHANGE.url" > /dev/null
+        then
+            pretty "git add \"$CHANGE\""
+            git add "$CHANGE"
+        fi
+    done
+
+    # are there any staged changes?
+    if git diff --cached --no-ext-diff --quiet --exit-code
     then
         echo "No changes"
         exit 1
     fi
 
-    pretty "git stash" "stashing staged changes and modifications"
-    git stash
+    # status after staging changes
+    git status --short --untracked-files=no
+
+    STASH_NAME="gitlava@$(date +%s)000"
+
+    pretty "git stash save \"$STASH_NAME\"" "stashing staged changes and modifications"
+    git stash save "$STASH_NAME"
+
+    # was a stash saved?
+    if git stash list | head -1 | grep -q "$STASH_NAME"
+    then
+        STASH_SAVED=yes
+    fi
 
     pretty "git pull" "in master branch"
     git pull
@@ -107,8 +138,11 @@ hotflow() {
         pretty "git checkout $MASTER_BRANCH"
         git checkout "$MASTER_BRANCH"
 
-        pretty "git stash pop" "unstashing"
-        git stash pop
+        if [ "$STASH_SAVED" == "yes" ]
+        then
+            pretty "git stash pop" "unstashing"
+            git stash pop
+        fi
 
         echo
         err "A current release version was not detected!"
@@ -132,8 +166,11 @@ hotflow() {
         pretty "git checkout $MASTER_BRANCH"
         git checkout "$MASTER_BRANCH"
 
-        pretty "git stash pop" "unstashing"
-        git stash pop
+        if [ "$STASH_SAVED" == "yes" ]
+        then
+            pretty "git stash pop" "unstashing"
+            git stash pop
+        fi
 
         exit 1
     elif [ "$MAJOR_VERSION" != "$CURRENT_RELEASE_VERSION" ]
@@ -155,31 +192,33 @@ hotflow() {
     TAG_NAME="$PREFIX$NEXT_VERSION"
     BRANCH_NAME="$HOTFIX_PREFIX/$TAG_NAME"
 
+    # setting up a trap to rollback on ctrl+C
+    trap rollback SIGINT
 
     pretty "git flow hotfix start $TAG_NAME"
     git flow hotfix start $TAG_NAME
 
-    pretty "git stash apply"
-    git stash apply
-    
-    if [ $? -ne 0 ]
+    if [ "$STASH_SAVED" == "yes" ]
     then
-        pretty "git reset --hard" "cleaning up index and working tree changes"
-        git reset --hard
-
-        rollback "$BRANCH_NAME" "$TAG_NAME"
+        pretty "git stash apply --index"
+        git stash apply --index
     fi
 
-    pretty "git --no-pager diff" "showing all modifications"
-    git --no-pager diff
+    if [ $? -ne 0 ]
+    then
+        rollback
+    fi
+
+    pretty "git --no-pager diff --cached" "showing all modifications"
+    git --no-pager diff --cached
 
     if [ "$COMMIT_MESSAGE" == "" ]
     then
-        pretty "git commit -a"
-        git commit -a
+        pretty "git commit"
+        git commit
     else
-        pretty "git commit -am \"$COMMIT_MESSAGE\""
-        git commit -am "$COMMIT_MESSAGE"
+        pretty "git commit -m \"$COMMIT_MESSAGE\""
+        git commit -m "$COMMIT_MESSAGE"
     fi
 
     # get the location of this script
@@ -196,14 +235,14 @@ hotflow() {
 
     if [ $? -ne 0 ]
     then
-        rollback "$BRANCH_NAME" "$TAG_NAME"
+        rollback
     fi
 
     pretty "git push" "push develop branch to origin"
     git push
     if [ $? -ne 0 ]
     then
-        rollback "$BRANCH_NAME" "$TAG_NAME"
+        rollback
     fi
 
     pretty "git checkout $MASTER_BRANCH"
@@ -220,16 +259,25 @@ hotflow() {
         exit
     fi
 
-    pretty "git stash drop"
-    git stash drop
+    if [ "$STASH_SAVED" == "yes" ]
+    then
+        pretty "git stash drop"
+        git stash drop
+    fi
 
     yo "Created hotfix ($TAG_NAME)"
-    # rollback "$BRANCH_NAME" "$TAG_NAME"
+    # rollback
 }
 
 rollback() {
+    trap - SIGINT # reset trap
+
     echo
     err "Rolling back ☹"
+
+    # in case we are still in the hotfix branch and there were merge commits on stash apply
+    pretty "git reset --hard" "cleaning up index and working tree changes"
+    git reset --hard
 
     pretty "git checkout $DEVELOP_BRANCH"
     git checkout "$DEVELOP_BRANCH"
@@ -243,17 +291,20 @@ rollback() {
     pretty "git reset --hard origin/$MASTER_BRANCH"
     git reset --hard "origin/$MASTER_BRANCH"
 
-    pretty "git branch -d $1"
-    git branch -d "$1"
+    pretty "git branch -d $BRANCH_NAME"
+    git branch -d "$BRANCH_NAME"
 
-    pretty "git tag -d $2"
-    git tag -d "$2"
+    pretty "git tag -d $TAG_NAME"
+    git tag -d "$TAG_NAME"
 
-    pretty "git stash pop"
-    git stash pop
-    
+    if [ "$STASH_SAVED" == "yes" ]
+    then
+        pretty "git stash pop"
+        git stash pop
+    fi
+
     echo
-    err "Couldn't create hotfix ($2)"
+    err "Couldn't create hotfix ($TAG_NAME)"
     exit 1
 }
 
