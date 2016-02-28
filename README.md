@@ -26,9 +26,11 @@ For example, with prefix `shifu` in hotfix version 3.1.4, the change commit is t
 
 ### Important prerequisites
 If you intend to use `git lava`, first check whether your project meets all these prerequisites
-  - project should follow [semantic versioning](http://semver.org/)
+  - project must use the [git flow](http://nvie.com/posts/a-successful-git-branching-model/) branching model
+  - project must follow [semantic versioning](http://semver.org/)
   - `git lava` searches `git log` for commit messages like `Merge branch 'hotfix/shifu-7.2.1' into develop` to find the next hotfix version, 
     so you must keep the merge commit messages in the same (default) format
+  - atleast one release must have been previously created in the repository
   - release names should also incorporate the tag prefix
     * if the tag prefix is set `shifu`, release branches need to be named like `release/shifu-7.1`
     * and if its omitted (set as `-`), release branches must be like `release/7.1`
