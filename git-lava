@@ -4,7 +4,7 @@
 main() {
     if [ "$1" == "-Xed" ]
     then
-        if grep -q "^# Write a message for tag" $3
+        if [ $(basename "$3") == "TAG_EDITMSG" ]
         then
             sed -e "1s/.*/$2/" -i "" "$3"
         fi
@@ -29,7 +29,7 @@ main() {
 hotflow() {
 
     if ! git status > /dev/null 2>&1
-    then 
+    then
         echo "Something wrong with git"
         exit 1
     fi
@@ -311,9 +311,9 @@ rollback() {
 pretty() {
     if [ "$2" == "" ]
     then
-        printf "\n\e[1m\e[103m\e[31m→ \e[39m$1\e[0m\n"
+        printf "\n\e[1m\e[103m\e[31m→ \e[30m$1\e[0m\n"
     else
-        printf "\n\e[1m\e[103m\e[31m→ \e[39m$1 \e[2m\e[21m# $2\e[0m\n"
+        printf "\n\e[1m\e[103m\e[31m→ \e[30m$1 \e[2m\e[21m# $2\e[0m\n"
     fi
 }
 
