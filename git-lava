@@ -92,8 +92,8 @@ hotflow() {
     do
         if ! git config --file=.gitmodules "submodule.$CHANGE.url" > /dev/null
         then
-            pretty "git add \"$CHANGE\""
-            git add "$CHANGE"
+            pretty "git add --all \"$CHANGE\""
+            git add --all "$CHANGE"
         fi
     done
 
@@ -198,6 +198,11 @@ hotflow() {
     pretty "git flow hotfix start $TAG_NAME"
     git flow hotfix start $TAG_NAME
 
+    if [ $? -ne 0 ]
+    then
+        rollback
+    fi
+
     if [ "$STASH_SAVED" == "yes" ]
     then
         pretty "git stash apply --index"
@@ -291,8 +296,8 @@ rollback() {
     pretty "git reset --hard origin/$MASTER_BRANCH"
     git reset --hard "origin/$MASTER_BRANCH"
 
-    pretty "git branch -d $BRANCH_NAME"
-    git branch -d "$BRANCH_NAME"
+    pretty "git branch -D $BRANCH_NAME"
+    git branch -D "$BRANCH_NAME"
 
     pretty "git tag -d $TAG_NAME"
     git tag -d "$TAG_NAME"
