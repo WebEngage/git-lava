@@ -155,24 +155,29 @@ hotflow() {
     MAJOR_VERSION=$(echo $LAST_VERSION | sed "s/\([0-9]*\.[0-9]*\)\.[0-9]*/\1/")
     MINOR_VERSION=$(echo $LAST_VERSION | sed "s/[0-9]*\.[0-9]*\.\([0-9]*\)/\1/")
 
-    if [ "$LAST_VERSION" != "" -a $(bc <<< "$MAJOR_VERSION > $CURRENT_RELEASE_VERSION") -eq 1 ]
+    if [ "$LAST_VERSION" != "" ]
     then
-        echo
-        err "Latest hotfix ($LAST_VERSION) has a major version greater than current release version ($CURRENT_RELEASE_VERSION)"
-        err "Rickrolling back"
 
-        # rollback
-
-        pretty "git checkout $MASTER_BRANCH"
-        git checkout "$MASTER_BRANCH"
-
-        if [ "$STASH_SAVED" == "yes" ]
+        if greater $MAJOR_VERSION $CURRENT_RELEASE_VERSION
         then
-            pretty "git stash pop" "unstashing"
-            git stash pop
+            echo
+            err "Latest hotfix ($LAST_VERSION) has a major version greater than current release version ($CURRENT_RELEASE_VERSION)"
+            err "Rickrolling back"
+
+            # rollback
+
+            pretty "git checkout $MASTER_BRANCH"
+            git checkout "$MASTER_BRANCH"
+
+            if [ "$STASH_SAVED" == "yes" ]
+            then
+                pretty "git stash pop" "unstashing"
+                git stash pop
+            fi
+
+            exit 1
         fi
 
-        exit 1
     elif [ "$MAJOR_VERSION" != "$CURRENT_RELEASE_VERSION" ]
     then
         MAJOR_VERSION="$CURRENT_RELEASE_VERSION"
@@ -311,6 +316,29 @@ rollback() {
     echo
     err "Couldn't create hotfix ($TAG_NAME)"
     exit 1
+}
+
+greater() {
+    VERSION_A=$1
+    VERSION_B=$2
+
+    VERSION_A_MAJOR=$(echo $VERSION_A | sed "s/\([0-9]*\)\.[0-9]*/\1/")
+    VERSION_A_MINOR=$(echo $VERSION_A | sed "s/[0-9]*\.\([0-9]*\)/\1/")
+
+    VERSION_B_MAJOR=$(echo $VERSION_B | sed "s/\([0-9]*\)\.[0-9]*/\1/")
+    VERSION_B_MINOR=$(echo $VERSION_B | sed "s/[0-9]*\.\([0-9]*\)/\1/")
+
+    if [ $VERSION_A_MAJOR -gt $VERSION_B_MAJOR ]
+    then
+        return 0
+    fi
+
+    if [ $VERSION_A_MAJOR -eq $VERSION_B_MAJOR -a $VERSION_A_MINOR -gt $VERSION_B_MINOR ]
+    then
+        return 0
+    fi
+
+    return 1
 }
 
 pretty() {
